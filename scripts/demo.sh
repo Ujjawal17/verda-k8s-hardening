@@ -144,11 +144,11 @@ run kubectl exec -n tenant-b deploy/app -- wget -qO- -T 5 http://backend.demo:98
 run kubectl exec -n demo deploy/frontend -- wget -qO- -T 5 http://app.tenant-b:9898/version
 # RBAC: a tenant-b developer, impersonated.
 for c in "create deployments -n tenant-b" "get secrets -n demo" "create deployments -n demo" \
-         "delete networkpolicies -n tenant-b" "create pods/exec -n tenant-b" "patch namespace tenant-b"; do
+         "delete networkpolicies -n tenant-b" "create pods/exec -n tenant-b" "patch namespaces/tenant-b"; do
   run kubectl auth can-i $c --as=bob --as-group=tenant-b
 done
 # Admission: tenant-b pods must use gVisor; namespace labels (PSA level, sandbox tier) are guarded.
-run kubectl apply --dry-run=server -f tests/kyverno/resources.yaml '|' grep -E "'sandbox'"
+run kubectl apply --dry-run=server -f tests/kyverno/resources.yaml '2>&1' '|' grep -E "'sandbox|signed'"
 run kubectl label ns tenant-b platform.verda.io/sandbox- --dry-run=server
 run kubectl label ns demo pod-security.kubernetes.io/enforce=privileged --overwrite --dry-run=server
 # GitOps: tenant-b's Argo project tries to deploy into demo.
