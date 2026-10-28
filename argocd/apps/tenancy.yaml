@@ -1,0 +1,21 @@
+# Platform-owned fences for each tenant namespace: namespace, quota, limits, network policy.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tenancy
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/Ujjawal17/verda-k8s-hardening.git
+    targetRevision: main
+    path: tenancy
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: demo
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }

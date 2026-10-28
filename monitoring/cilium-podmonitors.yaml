@@ -1,0 +1,26 @@
+# Cilium is installed by RKE2 before Prometheus CRDs exist, so it can't ship its own ServiceMonitors.
+# Scrape it from here instead. Agents run on the host network: works because ufw allows pod CIDR -> host.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: cilium-agent
+  namespace: monitoring
+spec:
+  namespaceSelector: { matchNames: [kube-system] }
+  selector:
+    matchLabels: { k8s-app: cilium }
+  podMetricsEndpoints:
+    - port: prometheus        # agent metrics (policy, drops, endpoints)
+    - port: hubble-metrics    # flow, dns, drop, policy verdicts
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: cilium-operator
+  namespace: monitoring
+spec:
+  namespaceSelector: { matchNames: [kube-system] }
+  selector:
+    matchLabels: { io.cilium/app: operator }
+  podMetricsEndpoints:
+    - port: prometheus

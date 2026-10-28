@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: falco
+  namespace: argocd
+spec:
+  project: platform
+  source:
+    repoURL: https://falcosecurity.github.io/charts
+    chart: falco
+    targetRevision: 9.2.1
+    helm:
+      valuesObject:
+        driver:
+          kind: modern_ebpf        # CO-RE eBPF probe, no kernel module
+        tty: true
+        tolerations: [{ operator: Exists }]   # every node, including cp-1
+        metrics:
+          enabled: true
+          interval: 1m
+          rulesCountersEnabled: true          # falcosecurity_falco_rules_matches_total{rule_name=...}
+        serviceMonitor:
+          create: true
+        falcosidekick:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: falco
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: privileged   # eBPF probe needs host privileges

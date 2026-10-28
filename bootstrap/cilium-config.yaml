@@ -1,0 +1,30 @@
+# Overrides for the RKE2-packaged Cilium chart. RKE2 auto-applies anything in its manifests dir.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: rke2-cilium
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    encryption:
+      enabled: true
+      type: wireguard          # node-to-node traffic crosses the public internet (no private network on Verda)
+    policyEnforcementMode: default
+    prometheus:
+      enabled: true
+    operator:
+      prometheus:
+        enabled: true
+    hubble:
+      enabled: true
+      relay:
+        enabled: true
+      ui:
+        enabled: true
+      metrics:
+        enabled:
+          - dns
+          - drop
+          - tcp
+          - flow
+          - policy:sourceContext=app|pod;destinationContext=app|pod|dns;labelsContext=source_namespace,destination_namespace

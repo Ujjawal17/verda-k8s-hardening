@@ -12,3 +12,9 @@ crash.log
 *.pem
 sealed-secrets-key*.yaml
 kubeconfig*
+
+# Local key material (Sealed Secrets private key, generated passwords)
+.secrets/
+tests/out/
+# Public sealing cert is safe to commit
+!secrets/sealing-cert.pem

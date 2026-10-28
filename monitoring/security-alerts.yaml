@@ -1,0 +1,47 @@
+# Security-plane alerts. Each one maps to a control and is triggered on purpose in docs/demo-log.md.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: security-alerts
+  namespace: monitoring
+spec:
+  groups:
+    - name: runtime
+      rules:
+        - alert: ShellSpawnedInContainer
+          expr: sum by (rule_name) (increase(falcosecurity_falco_rules_matches_total{rule_name="Terminal shell in container"}[5m])) > 0
+          labels: { severity: critical }
+          annotations:
+            summary: "Interactive shell spawned in a container"
+            description: "Falco saw a terminal shell inside a container. Expected never in workloads: possible attacker foothold or kubectl exec abuse. Pod details: kubectl logs -n falco -l app.kubernetes.io/name=falco."
+        - alert: ContainerContactedK8sApi
+          expr: sum by (rule_name) (increase(falcosecurity_falco_rules_matches_total{rule_name="Contact K8S API Server From Container"}[5m])) > 0
+          labels: { severity: warning }
+          annotations:
+            summary: "Unexpected API server contact from a container"
+            description: "A container talked to the Kubernetes API. App pods have no token, so this is recon or token-theft behaviour."
+    - name: admission
+      rules:
+        - alert: AdmissionRequestsDenied
+          expr: sum by (resource_namespace, resource_kind) (increase(kyverno_admission_requests_total{request_allowed="false"}[5m])) > 0
+          labels: { severity: warning }
+          annotations:
+            summary: "Kyverno denied {{ $labels.resource_kind }} in {{ $labels.resource_namespace }}"
+            description: "Someone tried to create a workload that breaks policy (privileged, :latest, untrusted registry...). One denial = a mistake, a burst = someone probing."
+    - name: network
+      rules:
+        - alert: NetworkPolicyDropsSpike
+          expr: sum by (reason) (rate(hubble_drop_total{reason="POLICY_DENIED"}[5m])) > 0.2
+          for: 2m
+          labels: { severity: warning }
+          annotations:
+            summary: "Sustained policy-denied traffic ({{ $value | humanize }}/s)"
+            description: "Pods keep trying connections that network policy forbids: lateral movement attempt, exfiltration, or a broken app."
+    - name: vulnerabilities
+      rules:
+        - alert: CriticalVulnerabilityRunning
+          expr: sum by (namespace, image_repository, image_tag) (trivy_image_vulnerabilities{severity="Critical"}) > 0
+          labels: { severity: warning }
+          annotations:
+            summary: "Critical CVEs in {{ $labels.image_repository }}:{{ $labels.image_tag }} ({{ $labels.namespace }})"
+            description: "Trivy found {{ $value }} critical vulnerabilities in a running image. Triage: fixed version available? reachable? exposed?"

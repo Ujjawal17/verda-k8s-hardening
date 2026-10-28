@@ -1,0 +1,73 @@
+# Image rules for every namespace except kube-system (RKE2/Cilium system images).
+# 1. No :latest and no untagged images (a tag or digest must pin what runs).
+# 2. Images only from allow-listed publishers (org-level, not whole registries: docker.io/* is anyone).
+apiVersion: policies.kyverno.io/v1beta1
+kind: ValidatingPolicy
+metadata:
+  name: disallow-latest-tag
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+    namespaceSelector:   # label set by the API server itself, cannot be changed by users
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system]
+  variables:
+    - name: images
+      expression: >-
+        object.spec.containers.map(c, c.image) +
+        (has(object.spec.initContainers) ? object.spec.initContainers.map(c, c.image) : []) +
+        (has(object.spec.ephemeralContainers) ? object.spec.ephemeralContainers.map(c, c.image) : [])
+  validations:
+    - expression: >-
+        variables.images.all(i, i.contains('@sha256:') ||
+          (i.split('/')[i.split('/').size() - 1].contains(':') && !i.endsWith(':latest')))
+      message: "Images must be pinned by tag or digest, and ':latest' is not allowed."
+---
+apiVersion: policies.kyverno.io/v1beta1
+kind: ValidatingPolicy
+metadata:
+  name: restrict-image-registries
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+    namespaceSelector:   # label set by the API server itself, cannot be changed by users
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system]
+  variables:
+    - name: images
+      expression: >-
+        object.spec.containers.map(c, c.image) +
+        (has(object.spec.initContainers) ? object.spec.initContainers.map(c, c.image) : []) +
+        (has(object.spec.ephemeralContainers) ? object.spec.ephemeralContainers.map(c, c.image) : [])
+    - name: allowed
+      expression: >-
+        [
+          'quay.io/argoproj/', 'ecr-public.aws.com/docker/library/redis:',
+          'reg.kyverno.io/kyverno/', 'ghcr.io/kyverno/',
+          'quay.io/prometheus/', 'quay.io/prometheus-operator/', 'quay.io/kiwigrid/',
+          'registry.k8s.io/kube-state-metrics/', 'ghcr.io/jkroepke/',
+          'docker.io/grafana/', 'docker.io/curlimages/',
+          'docker.io/falcosecurity/',
+          'mirror.gcr.io/aquasec/', 'ghcr.io/aquasecurity/',
+          'docker.io/bitnami/sealed-secrets-controller:',
+          'ghcr.io/stefanprodan/podinfo:', 'docker.io/nginxinc/nginx-unprivileged:'
+        ]
+  validations:
+    - expression: variables.images.all(i, variables.allowed.exists(p, i.startsWith(p)))
+      message: "Image registry/publisher is not on the allow-list (policies/image-rules.yaml)."

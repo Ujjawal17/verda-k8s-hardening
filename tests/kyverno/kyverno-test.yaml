@@ -1,0 +1,25 @@
+# Run: python3 tests/render.py && kyverno test tests/kyverno
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: verda-policies
+policies:
+  - ../../policies/image-rules.yaml
+  - ../../policies/workload-hardening.yaml
+  - ../../policies/restrict-service-types.yaml
+  - ../out/kyverno-pss.yaml          # rendered upstream PSS Restricted policies
+resources:
+  - resources.yaml
+variables: values.yaml
+results:
+  - { policy: disallow-latest-tag,        kind: Pod, resources: [good-pod],           result: pass }
+  - { policy: disallow-latest-tag,        kind: Pod, resources: [latest-tag],         result: fail }
+  - { policy: disallow-latest-tag,        kind: Pod, resources: [system-latest],      result: skip }
+  - { policy: restrict-image-registries,  kind: Pod, resources: [good-pod],           result: pass }
+  - { policy: restrict-image-registries,  kind: Pod, resources: [untrusted-registry], result: fail }
+  - { policy: workload-hardening,         kind: Pod, resources: [good-pod],           result: pass }
+  - { policy: workload-hardening,         kind: Pod, resources: [token-mounted],      result: fail }
+  - { policy: disallow-privileged-containers, kind: Pod, resources: [privileged],     result: fail }
+  - { policy: disallow-privileged-containers, kind: Pod, resources: [good-pod],       result: pass }
+  - { policy: restrict-service-types,     kind: Service, resources: [nodeport],       result: fail }
+  - { policy: restrict-service-types,     kind: Service, resources: [clusterip],      result: pass }

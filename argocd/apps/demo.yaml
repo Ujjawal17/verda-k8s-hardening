@@ -1,0 +1,19 @@
+# The tenant app. Deployed last, after every fence is in place.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: demo
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: workloads
+  source:
+    repoURL: https://github.com/Ujjawal17/verda-k8s-hardening.git
+    targetRevision: main
+    path: apps/demo
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: demo
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }

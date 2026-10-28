@@ -1,0 +1,54 @@
+# Two trust levels.
+# platform:  security tooling, cluster-scoped resources allowed, and it owns each tenant's fences
+#            (namespace, quota, network policy).
+# workloads: app teams. Own repo path only, own namespace only, and cannot touch anything that
+#            would loosen their own fences (RBAC, quotas, network policy).
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"   # projects before the apps that use them
+spec:
+  description: Security plane and tenant fences
+  sourceRepos:
+    - https://github.com/Ujjawal17/verda-k8s-hardening.git
+    - https://kyverno.github.io/kyverno/
+    - https://aquasecurity.github.io/helm-charts/
+    - https://prometheus-community.github.io/helm-charts
+    - https://falcosecurity.github.io/charts
+    - https://bitnami.github.io/sealed-secrets
+  destinations:
+    - { server: https://kubernetes.default.svc, namespace: kyverno }
+    - { server: https://kubernetes.default.svc, namespace: monitoring }
+    - { server: https://kubernetes.default.svc, namespace: falco }
+    - { server: https://kubernetes.default.svc, namespace: trivy-system }
+    - { server: https://kubernetes.default.svc, namespace: sealed-secrets }
+    - { server: https://kubernetes.default.svc, namespace: demo }
+  clusterResourceWhitelist:
+    - { group: "*", kind: "*" }   # CRDs, webhooks, ClusterRoles, cluster-wide policies
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: workloads
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+spec:
+  description: Application teams
+  sourceRepos:
+    - https://github.com/Ujjawal17/verda-k8s-hardening.git
+  destinations:
+    - { server: https://kubernetes.default.svc, namespace: demo }
+  clusterResourceWhitelist: []    # nothing cluster-scoped
+  namespaceResourceBlacklist:     # can't loosen own fences or grant itself rights
+    - { group: "", kind: ResourceQuota }
+    - { group: "", kind: LimitRange }
+    - { group: networking.k8s.io, kind: NetworkPolicy }
+    - { group: cilium.io, kind: CiliumNetworkPolicy }
+    - { group: rbac.authorization.k8s.io, kind: Role }
+    - { group: rbac.authorization.k8s.io, kind: RoleBinding }
+    - { group: policies.kyverno.io, kind: "*" }
+    - { group: kyverno.io, kind: "*" }

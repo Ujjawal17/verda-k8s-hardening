@@ -1,0 +1,5 @@
+# /etc/rancher/rke2/config.yaml on workers
+server: https://__CP_IP__:9345
+token-file: /etc/rancher/rke2/join-token   # piped in over SSH, never on a command line
+profile: cis
+node-ip: __NODE_IP__

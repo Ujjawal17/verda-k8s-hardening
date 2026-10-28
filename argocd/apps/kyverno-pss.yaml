@@ -1,0 +1,31 @@
+# Upstream Pod Security Standards (Restricted) as Kyverno ValidatingPolicies, enforced.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno-pss
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  project: platform
+  source:
+    repoURL: https://kyverno.github.io/kyverno/
+    chart: kyverno-policies
+    targetRevision: 3.9.2
+    helm:
+      valuesObject:
+        podSecurityStandard: restricted
+        validationFailureAction: Enforce
+        failurePolicy: Fail
+        vpolExclude:
+          excludeNamespaces:     # components that need host access by design (see docs/threat-model.md)
+            - kube-system
+            - kyverno
+            - falco
+            - monitoring
+            - trivy-system
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }

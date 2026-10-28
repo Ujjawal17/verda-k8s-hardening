@@ -1,0 +1,73 @@
+# 1. Default deny: selects every pod in demo, allows nothing in or out.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: demo
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# 2. DNS to kube-dns only. The L7 dns rule makes Cilium proxy DNS, which FQDN policies need.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: demo
+spec:
+  endpointSelector: {}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports: [{ port: "53", protocol: ANY }]
+          rules:
+            dns: [{ matchPattern: "*" }]
+---
+# 3. frontend -> backend, HTTP GET only (L7). A POST from the frontend is rejected by Cilium's proxy.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: frontend-to-backend
+  namespace: demo
+spec:
+  endpointSelector:
+    matchLabels: { app: backend }
+  ingress:
+    - fromEndpoints:
+        - matchLabels: { app: frontend }
+      toPorts:
+        - ports: [{ port: "9898", protocol: TCP }]
+          rules:
+            http: [{ method: GET }]
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: frontend-egress
+  namespace: demo
+spec:
+  endpointSelector:
+    matchLabels: { app: frontend }
+  egress:
+    - toEndpoints:
+        - matchLabels: { app: backend }
+      toPorts:
+        - ports: [{ port: "9898", protocol: TCP }]
+---
+# 4. Backend may call exactly one external API, by name (FQDN), on 443. Everything else is dropped.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: backend-egress-fqdn
+  namespace: demo
+spec:
+  endpointSelector:
+    matchLabels: { app: backend }
+  egress:
+    - toFQDNs:
+        - matchName: api.github.com
+      toPorts:
+        - ports: [{ port: "443", protocol: TCP }]

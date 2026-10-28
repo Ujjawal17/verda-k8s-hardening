@@ -1,0 +1,22 @@
+# Nothing in the cluster may open a port on the nodes' public IPs.
+apiVersion: policies.kyverno.io/v1beta1
+kind: ValidatingPolicy
+metadata:
+  name: restrict-service-types
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [services]
+    namespaceSelector:   # label set by the API server itself, cannot be changed by users
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system]
+  validations:
+    - expression: "!has(object.spec.type) || !(object.spec.type in ['NodePort', 'LoadBalancer'])"
+      message: "NodePort and LoadBalancer Services are not allowed: nodes have public IPs."

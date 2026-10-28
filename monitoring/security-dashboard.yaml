@@ -1,0 +1,35 @@
+# One-screen view of the security plane. Grafana's sidecar loads any ConfigMap with this label.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: security-plane-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  security-plane.json: |
+    {
+      "title": "Security plane",
+      "uid": "security-plane",
+      "time": { "from": "now-6h", "to": "now" },
+      "refresh": "30s",
+      "panels": [
+        { "type": "stat", "title": "Falco rule matches (1h)", "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
+          "targets": [{ "expr": "sum(increase(falcosecurity_falco_rules_matches_total[1h]))" }] },
+        { "type": "stat", "title": "Admission denials (1h)", "gridPos": { "x": 6, "y": 0, "w": 6, "h": 5 },
+          "targets": [{ "expr": "sum(increase(kyverno_admission_requests_total{request_allowed=\"false\"}[1h]))" }] },
+        { "type": "stat", "title": "Policy-denied packets (1h)", "gridPos": { "x": 12, "y": 0, "w": 6, "h": 5 },
+          "targets": [{ "expr": "sum(increase(hubble_drop_total{reason=\"POLICY_DENIED\"}[1h]))" }] },
+        { "type": "stat", "title": "Critical CVEs in running images", "gridPos": { "x": 18, "y": 0, "w": 6, "h": 5 },
+          "targets": [{ "expr": "sum(trivy_image_vulnerabilities{severity=\"Critical\"})" }] },
+        { "type": "timeseries", "title": "Falco detections by rule", "gridPos": { "x": 0, "y": 5, "w": 12, "h": 8 },
+          "targets": [{ "expr": "sum by (rule_name) (increase(falcosecurity_falco_rules_matches_total[5m]))", "legendFormat": "{{rule_name}}" }] },
+        { "type": "timeseries", "title": "Admission denials by namespace", "gridPos": { "x": 12, "y": 5, "w": 12, "h": 8 },
+          "targets": [{ "expr": "sum by (resource_namespace) (increase(kyverno_admission_requests_total{request_allowed=\"false\"}[5m]))", "legendFormat": "{{resource_namespace}}" }] },
+        { "type": "timeseries", "title": "Dropped flows by reason", "gridPos": { "x": 0, "y": 13, "w": 12, "h": 8 },
+          "targets": [{ "expr": "sum by (reason) (rate(hubble_drop_total[5m]))", "legendFormat": "{{reason}}" }] },
+        { "type": "table", "title": "Critical/High CVEs per image", "gridPos": { "x": 12, "y": 13, "w": 12, "h": 8 },
+          "targets": [{ "expr": "sum by (namespace, image_repository, image_tag, severity) (trivy_image_vulnerabilities{severity=~\"Critical|High\"}) > 0", "format": "table", "instant": true }] }
+      ],
+      "schemaVersion": 39
+    }

@@ -1,0 +1,12 @@
+# /etc/rancher/rke2/config.yaml on the control plane
+profile: cis                    # CIS hardening: PSA restricted default, audit log, protect-kernel-defaults, kube-system netpols
+cni: cilium                     # RKE2-packaged Cilium, tuned by cilium-config.yaml
+disable:
+  - rke2-ingress-nginx          # nothing is exposed publicly, no ingress needed
+node-taint:
+  - "CriticalAddonsOnly=true:NoExecute"   # keep workloads off the node holding etcd + CA keys
+write-kubeconfig-mode: "0600"
+node-ip: __NODE_IP__
+tls-san:
+  - __NODE_IP__
+secrets-encryption: true        # etcd encryption at rest (RKE2 default, stated explicitly)
