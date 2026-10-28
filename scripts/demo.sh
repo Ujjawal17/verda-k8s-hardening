@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs one blocked attempt per control and records command + output in docs/demo-log.md.
-# Needs: the SSH tunnel to the API server (see README), KUBECONFIG=./kubeconfig, nmap, ssh-agent with the node key.
+# Needs: the SSH tunnel to the API server (see README), KUBECONFIG=./kubeconfig, ssh-agent with the node key.
 set -uo pipefail   # no -e: blocked attempts are supposed to fail
 cd "$(dirname "$0")/.."
 export KUBECONFIG="$PWD/kubeconfig"
@@ -26,8 +26,16 @@ section "0. Cluster" "3 nodes, all apps synced from Git by Argo CD."
 run kubectl get nodes -o wide
 run kubectl get applications -n argocd
 
-section "1. Public surface" "Only cp-1:22 answers from the internet. Workers expose nothing. Root and password logins are refused."
-for ip in "${IPS[@]}"; do run nmap -Pn -T4 --max-retries 1 -p- "$ip"; done
+section "1. Public surface" "Every port a node listens on, tried from the internet: only cp-1:22 answers. Root and password logins are refused.
+(A fast nmap -p- reported hundreds of 'open' ports that nothing listens on: an upstream device answers scans, so the test uses the node's real sockets instead.)"
+# Ports the node really listens on (non-loopback), then a TCP connect to each from this laptop.
+probe() {
+  local ip="$1" p
+  for p in $(on "$ip" ss -ltnH | awk '{print $4}' | grep -vE '^(127\.|\[::1\])' | sed 's/.*://' | sort -un); do
+    timeout 4 bash -c "echo > /dev/tcp/$ip/$p" 2>/dev/null && echo "$ip:$p OPEN" || echo "$ip:$p blocked"
+  done
+}
+for ip in "${IPS[@]}"; do run probe "$ip"; done
 run "${SSH[@]}" -o PreferredAuthentications=publickey "root@$CP_IP" true
 run "${SSH[@]}" -o PreferredAuthentications=password,keyboard-interactive -o PubkeyAuthentication=no "admin@$CP_IP" true
 run on "$CP_IP" sshd -T '|' grep -E "'^(permitrootlogin|passwordauthentication|allowusers)'"
@@ -47,8 +55,10 @@ spec:
   source: { repoURL: https://github.com/Ujjawal17/verda-k8s-hardening.git, targetRevision: main, path: tenancy/demo }
   destination: { server: https://kubernetes.default.svc, namespace: demo }
 EOF
-kubectl apply -f /tmp/demo-escape-app.yaml >/dev/null; sleep 20
-run kubectl get application demo-escape -n argocd -o jsonpath="'{.status.conditions[*].message}'"
+kubectl apply -f /tmp/demo-escape-app.yaml >/dev/null
+# AppProject rules are checked at sync time: ask for a sync, then read the result.
+kubectl patch application demo-escape -n argocd --type merge -p '{"operation":{"sync":{"revision":"main"}}}' >/dev/null; sleep 20
+run kubectl get application demo-escape -n argocd -o jsonpath="'{.status.operationState.phase}: {.status.operationState.message}'"
 kubectl delete -f /tmp/demo-escape-app.yaml >/dev/null
 
 section "4. Network (Cilium default-deny, L7, FQDN, metadata/kubelet deny, WireGuard)" "Allowed flows work, everything else is dropped and visible in Hubble."
@@ -65,11 +75,12 @@ for p in $(kubectl get pods -n kube-system -l k8s-app=cilium -o name); do
 done
 run kubectl exec -n kube-system ds/cilium -c cilium-agent -- cilium-dbg encrypt status
 
-section "5. Runtime detection (Falco)" "Interactive shell in a workload container: detected, then alerted (section 6)."
+section "5. Runtime detection (Falco)" "Interactive shell in a workload container, and a tenant pod reaching for the API server: both detected, then alerted (section 6)."
 echo "\$ kubectl exec -it -n demo deploy/frontend -- sh -c 'id; exit'" >> "$LOG"
 script -qec "kubectl exec -it -n demo deploy/frontend -- sh -c 'id; exit'" /dev/null   # script = pty, works unattended
+run kubectl exec -n demo deploy/frontend -- wget -qO- -T 5 --no-check-certificate https://kubernetes.default.svc/api
 sleep 30
-run kubectl logs -n falco -l app.kubernetes.io/name=falco -c falco --since=5m '|' grep -E "'Terminal shell|K8S API'" '|' tail -5
+run kubectl logs -n falco -l app.kubernetes.io/name=falco -c falco --since=5m '|' grep -E "'shell was spawned|K8s API Server'" '|' grep demo '|' tail -5
 
 section "6. Alerts (Prometheus)" "The attempts above fire the security alerts."
 echo ">> waiting 3 minutes for rules to evaluate"; sleep 180
@@ -86,13 +97,13 @@ section "8. Secrets" "Git only holds ciphertext; app pods have no API token and 
 run head -20 monitoring/grafana-admin.sealed.yaml
 run kubectl get secret grafana-admin -n monitoring
 run kubectl auth can-i get secrets -n demo --as=system:serviceaccount:demo:default
-run on "$CP_IP" /var/lib/rancher/rke2/bin/rke2 secrets-encrypt status
+run on "$CP_IP" /usr/local/bin/rke2 secrets-encrypt status
 
 section "9. CIS benchmark (kube-bench, rke2-cis-1.9)" "Full output in docs/kube-bench-*.txt, summary here."
 KB=v0.16.0; T=$(mktemp -d)
 curl -sL -o "$T/kb.tgz" "https://github.com/aquasecurity/kube-bench/releases/download/$KB/kube-bench_${KB#v}_linux_amd64.tar.gz"
 curl -sL -o "$T/sums" "https://github.com/aquasecurity/kube-bench/releases/download/$KB/kube-bench_${KB#v}_checksums.txt"
-(cd "$T" && grep " kube-bench_${KB#v}_linux_amd64.tar.gz\$" sums | sed "s/ kube-bench.*/  kb.tgz/" | sha256sum -c -) || exit 1
+(cd "$T" && awk -v f="kube-bench_${KB#v}_linux_amd64.tar.gz" '$2==f {print $1"  kb.tgz"}' sums | sha256sum -c -) || exit 1
 for i in 0 1; do
   ip="${IPS[$i]}"; node=$([ "$i" = 0 ] && echo cp-1 || echo worker-1)
   targets=$([ "$i" = 0 ] && echo master,etcd,controlplane,policies || echo node)

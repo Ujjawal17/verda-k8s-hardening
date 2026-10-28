@@ -23,6 +23,15 @@ spec:
           create: true
         falcosidekick:
           enabled: false
+        # Platform controllers (Argo CD, Kyverno, Prometheus...) must talk to the API: without this the
+        # rule fires all day and hides the real signal. Tenant pods have no token, so a hit there is real.
+        customRules:
+          platform-exceptions.yaml: |-
+            - macro: user_known_contact_k8s_api_server_activities
+              condition: >
+                k8s.ns.name in (kube-system, argocd, kyverno, monitoring, falco, trivy-system, sealed-secrets)
+              override:
+                condition: replace
   destination:
     server: https://kubernetes.default.svc
     namespace: falco

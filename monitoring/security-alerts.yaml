@@ -9,17 +9,25 @@ spec:
     - name: runtime
       rules:
         - alert: ShellSpawnedInContainer
-          expr: sum by (rule_name) (increase(falcosecurity_falco_rules_matches_total{rule_name="Terminal shell in container"}[5m])) > 0
+          # Falco creates a rule's counter at its first match (value 1), which increase() cannot see:
+          # the "unless ... offset" part catches a series that did not exist 5m ago.
+          expr: |
+            sum by (rule_name) (increase(falcosecurity_falco_rules_matches_total{rule_name="Terminal shell in container"}[5m])) > 0
+            or (sum by (rule_name) (falcosecurity_falco_rules_matches_total{rule_name="Terminal shell in container"})
+                unless sum by (rule_name) (falcosecurity_falco_rules_matches_total{rule_name="Terminal shell in container"} offset 5m))
           labels: { severity: critical }
           annotations:
             summary: "Interactive shell spawned in a container"
             description: "Falco saw a terminal shell inside a container. Expected never in workloads: possible attacker foothold or kubectl exec abuse. Pod details: kubectl logs -n falco -l app.kubernetes.io/name=falco."
         - alert: ContainerContactedK8sApi
-          expr: sum by (rule_name) (increase(falcosecurity_falco_rules_matches_total{rule_name="Contact K8S API Server From Container"}[5m])) > 0
+          expr: |
+            sum by (rule_name) (increase(falcosecurity_falco_rules_matches_total{rule_name="Contact K8S API Server From Container"}[5m])) > 0
+            or (sum by (rule_name) (falcosecurity_falco_rules_matches_total{rule_name="Contact K8S API Server From Container"})
+                unless sum by (rule_name) (falcosecurity_falco_rules_matches_total{rule_name="Contact K8S API Server From Container"} offset 5m))
           labels: { severity: warning }
           annotations:
             summary: "Unexpected API server contact from a container"
-            description: "A container talked to the Kubernetes API. App pods have no token, so this is recon or token-theft behaviour."
+            description: "A non-platform container talked to the Kubernetes API (platform namespaces are excepted in the Falco rule). App pods have no token, so this is recon or token-theft behaviour."
     - name: admission
       rules:
         - alert: AdmissionRequestsDenied
@@ -31,11 +39,10 @@ spec:
     - name: network
       rules:
         - alert: NetworkPolicyDropsSpike
-          expr: sum by (reason) (rate(hubble_drop_total{reason="POLICY_DENIED"}[5m])) > 0.2
-          for: 2m
+          expr: sum by (reason) (increase(hubble_drop_total{reason="POLICY_DENIED"}[5m])) > 10
           labels: { severity: warning }
           annotations:
-            summary: "Sustained policy-denied traffic ({{ $value | humanize }}/s)"
+            summary: "{{ $value | humanize }} policy-denied packets in 5m"
             description: "Pods keep trying connections that network policy forbids: lateral movement attempt, exfiltration, or a broken app."
     - name: vulnerabilities
       rules:

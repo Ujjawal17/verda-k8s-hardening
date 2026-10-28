@@ -17,14 +17,32 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata: { name: latest-tag, namespace: demo }
-spec:
-  containers: [{ name: app, image: "docker.io/nginxinc/nginx-unprivileged:latest" }]
+spec:                    # compliant in every way except the image, so only the image rule can reject it
+  automountServiceAccountToken: false
+  securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
+  containers:
+    - name: app
+      image: "docker.io/nginxinc/nginx-unprivileged:latest"
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: [ALL] }
+      resources: { limits: { cpu: 100m, memory: 64Mi } }
 ---
 apiVersion: v1
 kind: Pod
 metadata: { name: untrusted-registry, namespace: demo }
-spec:
-  containers: [{ name: app, image: "docker.io/evil/miner:1.0" }]
+spec:                    # compliant in every way except the image, so only the image rule can reject it
+  automountServiceAccountToken: false
+  securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
+  containers:
+    - name: app
+      image: "docker.io/evil/miner:1.0@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: [ALL] }
+      resources: { limits: { cpu: 100m, memory: 64Mi } }
 ---
 apiVersion: v1
 kind: Pod

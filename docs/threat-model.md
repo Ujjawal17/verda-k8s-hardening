@@ -23,9 +23,9 @@ Each row: threat → control → where it's proven ([demo log](demo-log.md) sect
 
 | Layer | Threat | Control | Proof | Gap / residual risk |
 |---|---|---|---|---|
-| Node / host | SSH brute force, exposed node ports | ufw default-deny; only cp-1:22 public; key-only, `admin` user, root off, fail2ban; node ports only between node IPs | §1 nmap, sshd, ufw | 22 still public (dynamic home IP, Verda has no console/SSM). Prod: Tailscale/Teleport, zero public ports |
+| Node / host | SSH brute force, exposed node ports | ufw default-deny; only cp-1:22 public; key-only, `admin` user, root off, fail2ban; node ports only between node IPs | §1 port probe, sshd, ufw | 22 still public (dynamic home IP, Verda has no console/SSM). Prod: Tailscale/Teleport, zero public ports |
 | Node / host | Workload lands next to etcd | cp-1 tainted `CriticalAddonsOnly:NoExecute` | §0 node list | Single control plane = availability risk |
-| Control plane | API server reachable from internet | 6443 not public, kubectl via SSH tunnel | §1 nmap | Admin kubeconfig = long-lived cluster-admin client cert, no per-person identity (OIDC = prod) |
+| Control plane | API server reachable from internet | 6443 not public, kubectl via SSH tunnel | §1 port probe | Admin kubeconfig = long-lived cluster-admin client cert, no per-person identity (OIDC = prod) |
 | Control plane | Undetected API abuse | RKE2 CIS profile audit log (default policy) | — | Default audit policy, logs stay on cp-1 (attacker with root can erase) |
 | etcd / secrets | Secrets in Git or etcd in plaintext | Sealed Secrets (Git holds ciphertext); etcd encryption at rest | §8 | Encryption key on the same disk (no KMS on Verda); etcd snapshots on cp-1 unencrypted; sealing key copy on admin laptop |
 | Pod / container | Privileged pod, host mounts, root, token theft | Kyverno PSS Restricted (fail-closed, 3 replicas) + PSA restricted as second layer; tenant rules: no SA token, read-only root FS, limits | §2 | Platform namespaces exempt by design (Falco, node-exporter, Trivy need host access) |
