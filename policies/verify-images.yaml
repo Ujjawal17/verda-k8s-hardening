@@ -1,0 +1,36 @@
+# Supply chain: an allow-listed publisher is not enough, the image must carry the publisher's own
+# signature. podinfo is signed keyless (Sigstore) by its GitHub release workflow, so we pin that
+# exact identity: a signature from any other repo or workflow does not count.
+# Scope: images that ARE signed upstream. nginx-unprivileged has no signature; next step is a signed
+# base (or signing it ourselves in CI) and then widening matchImageReferences.
+apiVersion: policies.kyverno.io/v1beta1
+kind: ImageValidatingPolicy
+metadata:
+  name: verify-image-signatures
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+    namespaceSelector:   # every non-platform namespace (tenants, default, new ones)
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, kube-public, kube-node-lease, argocd, kyverno, monitoring, falco,
+                   trivy-system, sealed-secrets]
+  matchImageReferences:
+    - glob: "ghcr.io/stefanprodan/podinfo*"
+  attestors:
+    - name: podinfo
+      cosign:
+        keyless:
+          identities:
+            - issuer: https://token.actions.githubusercontent.com
+              subjectRegExp: '^https://github\.com/stefanprodan/podinfo/\.github/workflows/release\.yml@refs/tags/.+$'
+  validations:
+    - expression: images.containers.map(image, verifyImageSignatures(image, [attestors.podinfo])).all(e, e > 0)
+      message: "Image is not signed by its publisher's release workflow (policies/verify-images.yaml)."

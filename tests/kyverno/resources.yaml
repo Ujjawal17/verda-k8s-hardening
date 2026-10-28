@@ -7,7 +7,7 @@ spec:
   securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
   containers:
     - name: app
-      image: ghcr.io/stefanprodan/podinfo:6.8.0@sha256:6c1975b871efb327528c84d46d38e6dd7906eecee6402bc270eeb7f1b1a506df
+      image: ghcr.io/stefanprodan/podinfo:6.15.0@sha256:ec73780a8425f59ea49f5bc8cdff0d598805a224fbaa1f86c67a244f250fa9da
       securityContext:
         allowPrivilegeEscalation: false
         readOnlyRootFilesystem: true
@@ -50,7 +50,7 @@ metadata: { name: privileged, namespace: demo }
 spec:
   containers:
     - name: app
-      image: ghcr.io/stefanprodan/podinfo:6.8.0@sha256:6c1975b871efb327528c84d46d38e6dd7906eecee6402bc270eeb7f1b1a506df
+      image: ghcr.io/stefanprodan/podinfo:6.15.0@sha256:ec73780a8425f59ea49f5bc8cdff0d598805a224fbaa1f86c67a244f250fa9da
       securityContext: { privileged: true }
 ---
 apiVersion: v1
@@ -60,7 +60,7 @@ spec:
   securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
   containers:
     - name: app
-      image: ghcr.io/stefanprodan/podinfo:6.8.0@sha256:6c1975b871efb327528c84d46d38e6dd7906eecee6402bc270eeb7f1b1a506df
+      image: ghcr.io/stefanprodan/podinfo:6.15.0@sha256:ec73780a8425f59ea49f5bc8cdff0d598805a224fbaa1f86c67a244f250fa9da
       securityContext:
         allowPrivilegeEscalation: false
         readOnlyRootFilesystem: true
@@ -97,7 +97,7 @@ spec:
   securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
   containers:
     - name: app
-      image: ghcr.io/stefanprodan/podinfo:6.8.0@sha256:6c1975b871efb327528c84d46d38e6dd7906eecee6402bc270eeb7f1b1a506df
+      image: ghcr.io/stefanprodan/podinfo:6.15.0@sha256:ec73780a8425f59ea49f5bc8cdff0d598805a224fbaa1f86c67a244f250fa9da
       securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
       resources: { limits: { cpu: 100m, memory: 64Mi } }
 ---
@@ -109,7 +109,7 @@ spec:                    # compliant except it skips gVisor in the untrusted tie
   securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
   containers:
     - name: app
-      image: ghcr.io/stefanprodan/podinfo:6.8.0@sha256:6c1975b871efb327528c84d46d38e6dd7906eecee6402bc270eeb7f1b1a506df
+      image: ghcr.io/stefanprodan/podinfo:6.15.0@sha256:ec73780a8425f59ea49f5bc8cdff0d598805a224fbaa1f86c67a244f250fa9da
       securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
       resources: { limits: { cpu: 100m, memory: 64Mi } }
 ---
@@ -124,3 +124,15 @@ kind: Namespace
 metadata:
   name: rogue
   labels: { pod-security.kubernetes.io/enforce: privileged }
+---
+apiVersion: v1
+kind: Pod
+metadata: { name: unsigned-image, namespace: demo }
+spec:                    # allow-listed publisher, digest-pinned, compliant, but NOT signed (live: verify-images.yaml)
+  automountServiceAccountToken: false
+  securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
+  containers:
+    - name: app
+      image: ghcr.io/stefanprodan/podinfo:5.0.0@sha256:d15a206e4ee462e82ab722ed84dfa514ab9ed8d85100d591c04314ae7c2162ee
+      securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+      resources: { limits: { cpu: 100m, memory: 64Mi } }

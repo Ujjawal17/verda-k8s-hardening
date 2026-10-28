@@ -6,15 +6,16 @@ Hardened 3-node RKE2 cluster on Verda Cloud. Everything after bootstrap is deplo
 |---|---|
 | Hosts | ufw default-deny, only cp-1:22 public, key-only SSH as `admin`, root login off, fail2ban, CIS sysctls |
 | Kubernetes | RKE2 `profile: cis` (PSA restricted default, audit log, kernel defaults), control plane tainted, etcd secrets encryption |
-| Network | Cilium: default-deny in tenant namespaces, L7 (GET-only) and FQDN egress policies, cluster-wide deny to metadata + kubelet, WireGuard between nodes, Hubble |
-| Admission | Kyverno (fail-closed, 3 replicas): PSS Restricted, no `:latest`, publisher allow-list, digest pinning, no SA token, read-only root FS, limits, no NodePort/LoadBalancer |
-| GitOps | Argo CD app-of-apps; `workloads` project cannot touch RBAC, quotas, or network policy; no admin login |
+| Network | Cilium: default-deny in every non-platform namespace, L7 (GET-only), FQDN egress and DNS allow-lists (no DNS exfil), cluster-wide deny to metadata + kubelet, WireGuard between nodes, Hubble |
+| Admission | Kyverno (fail-closed, 3 replicas): PSS Restricted, no `:latest`, publisher allow-list, digest pinning, cosign signature verification, no SA token, read-only root FS, limits, no NodePort/LoadBalancer, namespace-label guard |
+| Multi-tenancy | `demo` (standard tier) and `tenant-b` (untrusted tier, gVisor required): own namespace, quota, default-deny, `tenant-developer` RBAC, own AppProject |
+| GitOps | Argo CD app-of-apps; tenant projects cannot touch RBAC, quotas, network policy or other namespaces; no admin login; signed commits + branch protection + CI gate |
 | Scanning | Trivy Operator (images, config, CIS/NSA/PSS compliance), kube-bench |
 | Runtime | Falco (modern eBPF) |
 | Secrets | Sealed Secrets with an offline-generated key |
 | Observability | Prometheus, Grafana "Security plane" dashboard, 5 security alerts |
 
-Docs: [threat model](docs/threat-model.md) · [demo log](docs/demo-log.md) · [summary](SUMMARY.md)
+Docs: [summary](SUMMARY.md) · [threat model](docs/threat-model.md) · [demo log](docs/demo-log.md) · [attack scenarios](docs/attack-scenarios.md) · [CVE triage](docs/cve-triage.md) · [scaling](docs/scale.md)
 
 ## Layout
 
@@ -23,11 +24,12 @@ infra/        Terraform: 3 Verda VMs + SSH key (no secrets in state)
 bootstrap/    bootstrap.sh + RKE2/Cilium/Argo CD config (run once)
 argocd/       AppProjects + one Application per component (app-of-apps)
 policies/     custom Kyverno ValidatingPolicies + cluster-wide Cilium policy
-tenancy/      platform-owned fences per tenant namespace (quota, limits, network policy)
-apps/demo/    tenant app: frontend (nginx) -> backend (podinfo)
+tenancy/      platform-owned fences per tenant (namespace, quota, limits, network policy, RBAC) + gVisor RuntimeClass
+apps/         tenant apps: demo (nginx -> podinfo), tenant-b (podinfo in gVisor)
 monitoring/   alerts, dashboard, Cilium scrape config, sealed Grafana secret
 tests/        offline tests: chart rendering + kyverno test suite
 scripts/      seal-secrets.sh (offline), demo.sh (proof collection)
+.github/      CI gate: policy tests, manifest validation, tenant image CVE scan
 ```
 
 ## Build
@@ -72,3 +74,13 @@ kubectl -n argocd patch secret argocd-secret -p \
 ```bash
 ./scripts/demo.sh      # writes docs/demo-log.md: one blocked attempt per control
 ```
+
+## Policy lifecycle
+
+1. **Write** the policy in `policies/` with a pass and a fail case in `tests/kyverno/`.
+2. **Test offline**: `python3 tests/render.py && kyverno test tests/kyverno` (also checks every platform chart still passes).
+3. **PR → CI** (`.github/workflows/ci.yaml`): policy tests, kubeconform, tenant image CVE gate. Branch protection on `main`
+   requires signed commits; add the CI checks as required status checks.
+4. **Merge → Argo CD** syncs the `policies` app. New or risky rules start with `validationActions: [Audit]`, are reviewed
+   in PolicyReports (`kubectl get policyreports -A`), then switched to `[Deny]` in a second PR.
+5. **Prove** on the cluster: `scripts/demo.sh`.

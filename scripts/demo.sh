@@ -82,7 +82,7 @@ spec:
   securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
   containers:
     - name: app
-      image: ghcr.io/stefanprodan/podinfo:6.8.0@sha256:6c1975b871efb327528c84d46d38e6dd7906eecee6402bc270eeb7f1b1a506df
+      image: ghcr.io/stefanprodan/podinfo:6.15.0@sha256:ec73780a8425f59ea49f5bc8cdff0d598805a224fbaa1f86c67a244f250fa9da
       command: [sleep, "300"]
       securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
       resources: { limits: { cpu: 100m, memory: 64Mi } }

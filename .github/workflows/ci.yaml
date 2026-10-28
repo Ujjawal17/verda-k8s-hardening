@@ -1,0 +1,71 @@
+# Gate for main: nothing reaches Argo CD unless policies pass their tests, manifests are valid,
+# and no tenant image ships a fixable CRITICAL CVE. Branch protection requires these checks.
+# Supply chain of the pipeline itself: actions pinned by commit SHA, tools pinned by version + sha256.
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request:
+permissions:
+  contents: read
+
+env:
+  HELM: v3.16.3
+  HELM_SHA256: f5355c79190951eed23c5432a3b920e071f4c00a64f75e077de0dd4cb7b294ea
+  KYVERNO: v1.19.2
+  KYVERNO_SHA256: 357eaf1df8bc24ddd5a73979fadeaae6a032e8710f11af264229756e4956bf4a
+  KUBECONFORM: v0.8.0
+  KUBECONFORM_SHA256: 9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883
+  TRIVY: 0.75.0
+  TRIVY_SHA256: c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f
+
+jobs:
+  policies:
+    name: policy tests + manifest validation
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+      - name: install tools (pinned, checksum-verified)
+        run: |
+          set -euo pipefail
+          get() { curl -sfLo "$1" "$2" && echo "$3  $1" | sha256sum -c -; }
+          get helm.tgz "https://get.helm.sh/helm-$HELM-linux-amd64.tar.gz" "$HELM_SHA256"
+          get kyverno.tgz "https://github.com/kyverno/kyverno/releases/download/$KYVERNO/kyverno-cli_${KYVERNO}_linux_x86_64.tar.gz" "$KYVERNO_SHA256"
+          get kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM/kubeconform-linux-amd64.tar.gz" "$KUBECONFORM_SHA256"
+          mkdir -p bin
+          tar -xzf helm.tgz --strip-components=1 -C bin linux-amd64/helm
+          tar -xzf kyverno.tgz -C bin kyverno
+          tar -xzf kubeconform.tgz -C bin kubeconform
+          echo "$PWD/bin" >> "$GITHUB_PATH"
+          pip install --quiet pyyaml==6.0.2
+      - name: render charts (platform components must pass the same policies)
+        run: python3 tests/render.py
+      - name: kyverno test (every policy has a pass and a fail case)
+        run: kyverno test tests/kyverno
+      - name: kubeconform (schemas incl. CRDs)
+        run: >-
+          kubeconform -strict -summary -kubernetes-version 1.36.5
+          -schema-location default
+          -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+          apps/ tenancy/ policies/ argocd/ monitoring/ bootstrap/argocd.yaml bootstrap/root-app.yaml
+
+  images:
+    name: tenant image CVE gate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+      - name: install trivy (pinned, checksum-verified)
+        run: |
+          set -euo pipefail
+          curl -sfLo trivy.tgz "https://github.com/aquasecurity/trivy/releases/download/v$TRIVY/trivy_${TRIVY}_Linux-64bit.tar.gz"
+          echo "$TRIVY_SHA256  trivy.tgz" | sha256sum -c -
+          tar -xzf trivy.tgz trivy && sudo install -m 755 trivy /usr/local/bin/
+      - name: fail on fixable CRITICAL CVEs in tenant images
+        # Fixable only: an unfixable CVE cannot be resolved by a bump; it goes through
+        # docs/cve-triage.md (reachability, exposure, compensating controls) instead.
+        run: |
+          set -euo pipefail
+          grep -rhoE 'image: *"?[^" ]+' apps/ | sed -E 's/image: *"?//' | sort -u | while read -r img; do
+            echo "::group::$img"
+            trivy image --quiet --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1 "$img"
+            echo "::endgroup::"
+          done
