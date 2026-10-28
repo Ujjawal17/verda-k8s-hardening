@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs one blocked attempt per control and records command + output in docs/demo-log.md.
-# Needs: the SSH tunnel to the API server (see README), KUBECONFIG=./kubeconfig, nmap, a TTY (Falco test).
+# Needs: the SSH tunnel to the API server (see README), KUBECONFIG=./kubeconfig, nmap, ssh-agent with the node key.
 set -uo pipefail   # no -e: blocked attempts are supposed to fail
 cd "$(dirname "$0")/.."
 export KUBECONFIG="$PWD/kubeconfig"
@@ -67,7 +67,7 @@ run kubectl exec -n kube-system ds/cilium -c cilium-agent -- cilium-dbg encrypt 
 
 section "5. Runtime detection (Falco)" "Interactive shell in a workload container: detected, then alerted (section 6)."
 echo "\$ kubectl exec -it -n demo deploy/frontend -- sh -c 'id; exit'" >> "$LOG"
-kubectl exec -it -n demo deploy/frontend -- sh -c 'id; exit'
+script -qec "kubectl exec -it -n demo deploy/frontend -- sh -c 'id; exit'" /dev/null   # script = pty, works unattended
 sleep 30
 run kubectl logs -n falco -l app.kubernetes.io/name=falco -c falco --since=5m '|' grep -E "'Terminal shell|K8S API'" '|' tail -5
 

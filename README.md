@@ -32,7 +32,7 @@ scripts/      seal-secrets.sh (offline), demo.sh (proof collection)
 
 ## Build
 
-Needs: terraform, kubectl, helm, jq, kubeseal, Verda API creds, SSH key `~/.ssh/verda_k8s`.
+Needs: terraform, kubectl, helm, jq, kubeseal, nmap, Verda API creds, SSH key `~/.ssh/verda_k8s` loaded in ssh-agent (`ssh-add -l`; scripts use plain `ssh`, no `-i`).
 
 ```bash
 source ~/.config/verda/env                 # VERDA_CLIENT_ID / VERDA_CLIENT_SECRET

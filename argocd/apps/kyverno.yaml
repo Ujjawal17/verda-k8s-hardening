@@ -5,6 +5,7 @@ metadata:
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "-4"
+    argocd.argoproj.io/compare-options: ServerSideDiff=true   # diff like the API server applies (pairs with ServerSideApply)
 spec:
   project: platform
   source:
