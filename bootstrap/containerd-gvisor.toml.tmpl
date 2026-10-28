@@ -1,0 +1,6 @@
+{{ template "base" . }}
+
+# gVisor: user-space kernel for untrusted tenants (RuntimeClass "gvisor", see tenancy/runtimeclass.yaml).
+# RKE2 renders its normal config ("base") and appends this runtime.
+[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runsc]
+  runtime_type = "io.containerd.runsc.v1"

@@ -26,6 +26,7 @@ spec:
     - { server: https://kubernetes.default.svc, namespace: trivy-system }
     - { server: https://kubernetes.default.svc, namespace: sealed-secrets }
     - { server: https://kubernetes.default.svc, namespace: demo }
+    - { server: https://kubernetes.default.svc, namespace: tenant-b }
   clusterResourceWhitelist:
     - { group: "*", kind: "*" }   # CRDs, webhooks, ClusterRoles, cluster-wide policies
 ---
@@ -44,6 +45,31 @@ spec:
     - { server: https://kubernetes.default.svc, namespace: demo }
   clusterResourceWhitelist: []    # nothing cluster-scoped
   namespaceResourceBlacklist:     # can't loosen own fences or grant itself rights
+    - { group: "", kind: ResourceQuota }
+    - { group: "", kind: LimitRange }
+    - { group: networking.k8s.io, kind: NetworkPolicy }
+    - { group: cilium.io, kind: CiliumNetworkPolicy }
+    - { group: rbac.authorization.k8s.io, kind: Role }
+    - { group: rbac.authorization.k8s.io, kind: RoleBinding }
+    - { group: policies.kyverno.io, kind: "*" }
+    - { group: kyverno.io, kind: "*" }
+---
+# One project per tenant: same rules as workloads, different (single) namespace.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: tenant-b
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+spec:
+  description: Tenant B (untrusted tier, gVisor)
+  sourceRepos:
+    - https://github.com/Ujjawal17/verda-k8s-hardening.git
+  destinations:
+    - { server: https://kubernetes.default.svc, namespace: tenant-b }
+  clusterResourceWhitelist: []
+  namespaceResourceBlacklist:
     - { group: "", kind: ResourceQuota }
     - { group: "", kind: LimitRange }
     - { group: networking.k8s.io, kind: NetworkPolicy }

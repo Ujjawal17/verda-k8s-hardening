@@ -1,0 +1,43 @@
+# tenant-b app: one podinfo, sandboxed in gVisor. Nothing may reach it and it may reach nothing.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: tenant-b }
+  template:
+    metadata:
+      labels: { app: tenant-b }
+    spec:
+      runtimeClassName: gvisor          # required in this namespace (policies/require-sandbox.yaml)
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: podinfo
+          image: ghcr.io/stefanprodan/podinfo:6.8.0@sha256:6c1975b871efb327528c84d46d38e6dd7906eecee6402bc270eeb7f1b1a506df
+          command: [./podinfo, --port=9898, --data-path=/data]
+          ports: [{ name: http, containerPort: 9898 }]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          volumeMounts: [{ name: data, mountPath: /data }]
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+      volumes: [{ name: data, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app
+spec:
+  selector: { app: tenant-b }
+  ports: [{ name: http, port: 9898, targetPort: http }]

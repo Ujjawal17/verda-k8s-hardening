@@ -1,0 +1,20 @@
+# What a tenant team may do in its own namespace (bound per namespace, see tenancy/*/rbac.yaml).
+# Deliberately NOT included: RBAC, quotas, limits, network policy, namespaces, pods/exec, pods/portforward.
+# The built-in "edit" role would let a tenant delete its own default-deny NetworkPolicy.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: tenant-developer
+rules:
+  - apiGroups: [apps]
+    resources: [deployments, replicasets, statefulsets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [services, configmaps, secrets, persistentvolumeclaims]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [pods, pods/log, events]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [delete]

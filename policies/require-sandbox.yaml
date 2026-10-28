@@ -1,0 +1,21 @@
+# Untrusted tier: in a namespace labelled platform.verda.io/sandbox=gvisor every pod must run in gVisor.
+# Only the platform sets that label (tenants cannot edit namespaces; policies/namespace-guard.yaml
+# stops it being removed).
+apiVersion: policies.kyverno.io/v1beta1
+kind: ValidatingPolicy
+metadata:
+  name: require-sandbox
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+    namespaceSelector:
+      matchLabels: { platform.verda.io/sandbox: gvisor }
+  validations:
+    - expression: has(object.spec.runtimeClassName) && object.spec.runtimeClassName == 'gvisor'
+      message: "This namespace is in the untrusted tier: pods must set runtimeClassName: gvisor."

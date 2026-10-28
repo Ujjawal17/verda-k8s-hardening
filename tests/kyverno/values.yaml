@@ -5,3 +5,5 @@ namespaceSelector:
     labels: { kubernetes.io/metadata.name: demo }
   - name: kube-system
     labels: { kubernetes.io/metadata.name: kube-system }
+  - name: tenant-b
+    labels: { kubernetes.io/metadata.name: tenant-b, platform.verda.io/sandbox: gvisor }

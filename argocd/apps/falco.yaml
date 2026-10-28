@@ -32,6 +32,13 @@ spec:
                 k8s.ns.name in (kube-system, argocd, kyverno, monitoring, falco, trivy-system, sealed-secrets)
               override:
                 condition: replace
+            # gVisor's sentry ptraces its own sandbox processes (systrap platform). Host process only,
+            # exact path + runsc parent, so a container cannot borrow the exception.
+            - macro: known_ptrace_procs
+              condition: >
+                or (not container and proc.exepath = /usr/local/bin/gvisor-bin/gvisor_sentry and proc.pname = runsc)
+              override:
+                condition: append
   destination:
     server: https://kubernetes.default.svc
     namespace: falco

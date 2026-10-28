@@ -7,6 +7,8 @@ policies:
   - ../../policies/image-rules.yaml
   - ../../policies/workload-hardening.yaml
   - ../../policies/restrict-service-types.yaml
+  - ../../policies/require-sandbox.yaml
+  - ../../policies/namespace-guard.yaml
   - ../out/kyverno-pss.yaml          # rendered upstream PSS Restricted policies
 resources:
   - resources.yaml
@@ -23,3 +25,7 @@ results:
   - { policy: disallow-privileged-containers, kind: Pod, resources: [good-pod],       result: pass }
   - { policy: restrict-service-types,     kind: Service, resources: [nodeport],       result: fail }
   - { policy: restrict-service-types,     kind: Service, resources: [clusterip],      result: pass }
+  - { policy: require-sandbox,            kind: Pod, resources: [sandboxed],          result: pass }
+  - { policy: require-sandbox,            kind: Pod, resources: [not-sandboxed],      result: fail }
+  - { policy: namespace-guard,            kind: Namespace, resources: [tenant-c],     result: pass }
+  - { policy: namespace-guard,            kind: Namespace, resources: [rogue],        result: fail }

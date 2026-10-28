@@ -1,0 +1,19 @@
+# Second tenant app, in its own AppProject: it can only ever deploy into tenant-b.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tenant-b
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: tenant-b
+  source:
+    repoURL: https://github.com/Ujjawal17/verda-k8s-hardening.git
+    targetRevision: main
+    path: apps/tenant-b
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tenant-b
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }

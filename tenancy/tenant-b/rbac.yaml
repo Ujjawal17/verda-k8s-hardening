@@ -1,0 +1,9 @@
+# Team "tenant-b" gets tenant-developer rights in tenant-b only.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tenant-developers
+  namespace: tenant-b
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: tenant-developer }
+subjects:
+  - { apiGroup: rbac.authorization.k8s.io, kind: Group, name: tenant-b }

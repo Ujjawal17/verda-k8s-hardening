@@ -75,8 +75,28 @@ curl -sfL https://get.rke2.io | INSTALL_RKE2_VERSION="$1" INSTALL_RKE2_TYPE="$2"
 cp /usr/local/share/rke2/rke2-cis-sysctl.conf /etc/sysctl.d/60-rke2-cis.conf
 systemctl restart systemd-sysctl
 if [ "$2" = server ]; then id etcd >/dev/null 2>&1 || useradd -r -c "etcd user" -s /sbin/nologin -M -U etcd; fi
-mkdir -p /etc/rancher/rke2 /var/lib/rancher/rke2/server/manifests
+mkdir -p /etc/rancher/rke2 /var/lib/rancher/rke2/server/manifests /var/lib/rancher/rke2/agent/etc/containerd
 EOF
+}
+
+# 2b. gVisor on workers (untrusted tenants run in it). Pinned release, sha512 pinned here, not fetched.
+GVISOR_RELEASE="20261012.0"
+GVISOR_SHA512="9606445eed5aedfcf05310e7ccef61d994089914c6622fc82624c24d2b18db1b2210f40e40a7be27b8b7772859de7d95c501b4eba66423053c960bf671377c5e"
+install_gvisor() {
+  local ip="$1"
+  echo ">> [$ip] installing gVisor $GVISOR_RELEASE"
+  on "$ip" bash -s -- "$GVISOR_RELEASE" "$GVISOR_SHA512" <<'EOF'
+set -euo pipefail
+command -v bzip2 >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y -qq bzip2 >/dev/null
+install -d -m 700 /root/gvisor-dl && cd /root/gvisor-dl
+curl -sfLo gvisor.tar.bz2 "https://storage.googleapis.com/gvisor/releases/release/$1/x86_64/gvisor.tar.bz2"
+echo "$2  gvisor.tar.bz2" | sha512sum -c - >/dev/null
+tar -xjf gvisor.tar.bz2 runsc containerd-shim-runsc-v1 gvisor-bin
+install -m 755 runsc containerd-shim-runsc-v1 /usr/local/bin/
+install -d -m 755 /usr/local/bin/gvisor-bin && install -m 755 gvisor-bin/* /usr/local/bin/gvisor-bin/   # sentry + helpers runsc execs
+rm -f gvisor.tar.bz2 runsc containerd-shim-runsc-v1 gvisor-bin/* && rmdir gvisor-bin
+EOF
+  push_config "$ip" containerd-gvisor.toml.tmpl /var/lib/rancher/rke2/agent/etc/containerd/config-v3.toml.tmpl
 }
 
 push_config() {  # <ip> <template> <dest path>
@@ -101,6 +121,7 @@ on "$CP_IP" systemctl enable --now rke2-server
 # 4. Workers. Join token goes CP -> worker through stdin only.
 for ip in "${IPS[@]:1}"; do
   install_rke2 "$ip" agent
+  install_gvisor "$ip"
   push_config "$ip" rke2-agent.yaml /etc/rancher/rke2/config.yaml
   on "$CP_IP" cat /var/lib/rancher/rke2/server/node-token \
     | on "$ip" install -m 600 /dev/stdin /etc/rancher/rke2/join-token

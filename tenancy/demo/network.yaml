@@ -8,7 +8,8 @@ spec:
   podSelector: {}
   policyTypes: [Ingress, Egress]
 ---
-# 2. DNS to kube-dns only. The L7 dns rule makes Cilium proxy DNS, which FQDN policies need.
+# 2. DNS to kube-dns only, and only for names the app needs. The L7 dns rule makes Cilium proxy DNS
+#    (FQDN policies need it) and refuses every other name: no DNS tunnelling / exfiltration.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -24,7 +25,9 @@ spec:
       toPorts:
         - ports: [{ port: "53", protocol: ANY }]
           rules:
-            dns: [{ matchPattern: "*" }]
+            dns:
+              - matchPattern: "**.cluster.local"   # in-cluster names (** = any depth)
+              - matchName: api.github.com          # the one external API (see backend-egress-fqdn)
 ---
 # 3. frontend -> backend, HTTP GET only (L7). A POST from the frontend is rejected by Cilium's proxy.
 apiVersion: cilium.io/v2

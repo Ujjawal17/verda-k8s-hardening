@@ -1,0 +1,18 @@
+# Secure by default: every namespace outside the platform list starts with NO network at all
+# (default, new namespaces, tenants). Tenants get their allows from tenancy/<tenant>/network.yaml.
+# Live run showed why: a pod in "default" could reach the API server.
+# Note: a CCNP with no rules does not enforce anything; the match-nothing rule switches the
+# selected pods into default-deny without allowing any traffic.
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: default-deny-all
+spec:
+  endpointSelector:
+    matchExpressions:
+      - key: k8s:io.kubernetes.pod.namespace
+        operator: NotIn
+        values: [kube-system, argocd, kyverno, monitoring, falco, trivy-system, sealed-secrets]
+  enableDefaultDeny: { ingress: true, egress: true }
+  ingress: [{ fromEndpoints: [{ matchLabels: { platform.verda.io/match-nothing: "true" } }] }]
+  egress: [{ toEndpoints: [{ matchLabels: { platform.verda.io/match-nothing: "true" } }] }]
