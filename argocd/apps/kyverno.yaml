@@ -28,3 +28,8 @@ spec:
   syncPolicy:
     automated: { prune: true, selfHeal: true }
     syncOptions: [CreateNamespace=true, ServerSideApply=true]
+  # Chart renders "labels: {}" on CRDs; server-side apply drops empty maps -> permanent false drift.
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      jsonPointers: [/metadata/labels]

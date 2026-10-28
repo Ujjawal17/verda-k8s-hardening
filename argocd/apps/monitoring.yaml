@@ -19,6 +19,9 @@ spec:
           kubeControllerManager: { enabled: false }
           kubeScheduler: { enabled: false }
           kubeProxy: { enabled: false }
+          # Its scrape Service lives in kube-system, which the platform project may not write to.
+          # DNS visibility comes from Hubble's dns metrics instead.
+          coreDns: { enabled: false }
           prometheus:
             prometheusSpec:
               retention: 3d

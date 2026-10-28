@@ -18,3 +18,5 @@ kubeconfig*
 tests/out/
 # Public sealing cert is safe to commit
 !secrets/sealing-cert.pem
+# saved terraform plans can hold sensitive values
+tfplan

@@ -23,8 +23,9 @@ on() { local ip="$1"; shift; ssh "${SSH_OPTS[@]}" $(jump "$ip") "$ADMIN@$ip" sud
 harden_node() {
   local ip="$1" public_ssh="$2"
   echo ">> [$ip] hardening host (public ssh: $public_ssh)"
+  # ssh joins args into one string for the remote shell: %q keeps the key (it has spaces) as one arg.
   ssh "${SSH_OPTS[@]}" $(jump "$ip") "root@$ip" bash -s -- \
-      "$ip" "$public_ssh" "$ADMIN" "$PUBKEY" "$POD_CIDR" "${IPS[@]}" <<'EOF'
+      "$(printf '%q ' "$ip" "$public_ssh" "$ADMIN" "$PUBKEY" "$POD_CIDR" "${IPS[@]}")" <<'EOF'
 set -euo pipefail
 SELF="$1"; PUBLIC_SSH="$2"; ADMIN="$3"; PUBKEY="$4"; POD_CIDR="$5"; shift 5
 export DEBIAN_FRONTEND=noninteractive
@@ -34,10 +35,14 @@ apt-get update -qq && apt-get install -y -qq ufw fail2ban >/dev/null
 ip -4 -o addr | grep -qw "$SELF" || { echo "public IP $SELF not on an interface (NAT?)"; exit 1; }
 
 # Named admin user (key only, passwordless sudo is logged by sudo), root login off.
-id "$ADMIN" >/dev/null 2>&1 || useradd -m -s /bin/bash -G sudo "$ADMIN"
+# Ubuntu ships a legacy "admin" group, so reuse it as the primary group when present.
+getent group "$ADMIN" >/dev/null && GRP=(-g "$ADMIN") || GRP=(-U)
+id "$ADMIN" >/dev/null 2>&1 || useradd -m -s /bin/bash "${GRP[@]}" -G sudo "$ADMIN"
 install -d -m 700 -o "$ADMIN" -g "$ADMIN" "/home/$ADMIN/.ssh"
 echo "$PUBKEY" | install -m 600 -o "$ADMIN" -g "$ADMIN" /dev/stdin "/home/$ADMIN/.ssh/authorized_keys"
 echo "$ADMIN ALL=(ALL) NOPASSWD:ALL" | install -m 440 /dev/stdin "/etc/sudoers.d/90-$ADMIN"
+# Lockout guard: never turn root login off unless admin has a valid key.
+ssh-keygen -lf "/home/$ADMIN/.ssh/authorized_keys" >/dev/null || { echo "admin key invalid, not touching sshd"; exit 1; }
 
 cat > /etc/ssh/sshd_config.d/10-hardening.conf <<CONF
 PermitRootLogin no
