@@ -1,4 +1,4 @@
-#directory structure
+# directory structure
 
 infra/        Terraform for provisoning 3 nodes on verda
 bootstrap/    bootstrap script to configure RKE2, Cilium, Argo CD once
@@ -10,7 +10,7 @@ monitoring/   alerts, dashboard, cilium scrape config, sealed grafana secret
 tests/        offline tests used in ci workflow: chart rendering py script and kyverno test
 scripts/      seal-secrets.sh to create secret offline, and demo.sh for creating demo log md file
 
-#How to run it:
+# How to run it:
 
 `terraform -chdir=infra output node_ips`
 for control plane: `ssh admin@<cp-1>` and workers: `ssh -J admin@<cp-1> admin@<worker>`
