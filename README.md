@@ -27,15 +27,35 @@ monitoring/   alerts, dashboard, cilium scrape config, sealed grafana secret
 tests/        offline tests used in ci workflow: chart rendering py script and kyverno test
 scripts/      seal-secrets.sh to create secret offline, and demo.sh for creating demo log md file
 
+## Access
+
+Current IPs
+
+1. cp-1 (control plane): `135.181.63.242`  with port `22` (SSH, key-only, no root, no password) open
+2. worker-1 `135.181.63.223` with no ports open, need to be reached via `ssh -J` through cp-1
+3. worker-2 `135.181.63.228` with no ports open, need to be reached via `ssh -J` through cp-1
+
+Kubernetes API (`6443`) and all dashboards are **not public**. They are reached through an SSH tunnel to cp-1:
+
+| Dashboard | Local URL after tunnel / port-forward | Login |
+|---|---|---|
+| Grafana ("Security plane" dashboard, alerts) | http://localhost:3000 | Grafana user |
+| Argo CD | https://localhost:8080 | `viewer` (read-only, admin login disabled) |
+| Hubble UI (network flows, policy drops) | http://localhost:12000 | none (tunnel only) |
+| Prometheus | http://localhost:9090 | none (tunnel only) |
+
+**Credentials** (SSH access, kubeconfig, dashboard passwords) are not stored in Git and can be shared separately if required.
+Commands are in "How to run it" below.
+
 ## How to run it:
 
-`terraform -chdir=infra output node_ips`
-for control plane: `ssh admin@<cp-1>` and workers: `ssh -J admin@<cp-1> admin@<worker>`
-`ssh -N -L 6443:127.0.0.1:6443 admin@<cp-1>` then `export KUBECONFIG=$PWD/kubeconfig`
-for  Grafana `kubectl -n monitoring port-forward svc/monitoring-grafana 3000:80` then http://localhost:3000 on browser, user `admin`, password in `.secrets/grafana-admin-password`
-for Argo CD `kubectl -n argocd port-forward svc/argocd-server 8080:443` then https://localhost:8080 on browser, user `viewer` (read-only), mentioned below to set password
-for Hubble UI `kubectl -n kube-system port-forward svc/hubble-ui 12000:80` then http://localhost:12000 on browser
-for Prometheus `kubectl -n monitoring port-forward svc/monitoring-kube-prometheus-prometheus 9090`
+1. `terraform -chdir=infra output node_ips`
+2. for control plane: `ssh admin@<cp-1>` and workers: `ssh -J admin@<cp-1> admin@<worker>`
+3. `ssh -N -L 6443:127.0.0.1:6443 admin@<cp-1>` then `export KUBECONFIG=$PWD/kubeconfig`
+4. for  Grafana `kubectl -n monitoring port-forward svc/monitoring-grafana 3000:80` then http://localhost:3000 on browser, user `admin`, password in `.secrets/grafana-admin-password`
+5. for Argo CD `kubectl -n argocd port-forward svc/argocd-server 8080:443` then https://localhost:8080 on browser, user `viewer` (read-only), mentioned below to set password
+6. for Hubble UI `kubectl -n kube-system port-forward svc/hubble-ui 12000:80` then http://localhost:12000 on browser
+7. for Prometheus `kubectl -n monitoring port-forward svc/monitoring-kube-prometheus-prometheus 9090`
 
 To set the Argo CD viewer password (since the admin login is disabled):
 ```bash
