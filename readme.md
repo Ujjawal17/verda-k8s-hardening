@@ -1,4 +1,21 @@
-# Directory structure
+# Verda k8s hardening
+
+Layer by layer controls:
+
+| Layer | Control |
+|---|---|
+| Hosts | ufw default-deny, only cp-1:22 public, key-only SSH as `admin`, root login off, fail2ban, CIS sysctls |
+| Kubernetes | RKE2 `profile: cis` (PSA restricted default, audit log, kernel defaults), control plane tainted, etcd secrets encryption |
+| Network | Cilium: default-deny in every non-platform namespace, L7 (GET-only), FQDN egress and DNS allow-lists (no DNS exfil), cluster-wide deny to metadata and kubelet, WireGuard between nodes, Hubble |
+| Admission | Kyverno (fail-closed, 3 replicas): PSS Restricted, no `:latest`, publisher allow-list, digest pinning, cosign signature verification, no SA token, read-only root FS, limits, no NodePort/LoadBalancer, namespace-label guard |
+| Multi-tenancy | `demo` (standard tier) and `tenant-b` (untrusted tier, gVisor required): own namespace, quota, default-deny, `tenant-developer` RBAC, own AppProject |
+| GitOps | Argo CD app-of-apps, tenant projects cannot touch RBAC, quotas, network policy or other namespaces and no admin login is allowed, signed commits, branch protection and CI gate |
+| Scanning | Trivy Operator (images, config, CIS/NSA/PSS compliance), kube-bench |
+| Runtime | Falco (modern eBPF) |
+| Secrets | Sealed Secrets with an offline-generated key |
+| Observability | Prometheus, Grafana "Security plane" dashboard, 5 security alerts |
+
+## Directory structure
 
 infra/        Terraform for provisoning 3 nodes on verda
 bootstrap/    bootstrap script to configure RKE2, Cilium, Argo CD once
@@ -10,7 +27,7 @@ monitoring/   alerts, dashboard, cilium scrape config, sealed grafana secret
 tests/        offline tests used in ci workflow: chart rendering py script and kyverno test
 scripts/      seal-secrets.sh to create secret offline, and demo.sh for creating demo log md file
 
-# How to run it:
+## How to run it:
 
 `terraform -chdir=infra output node_ips`
 for control plane: `ssh admin@<cp-1>` and workers: `ssh -J admin@<cp-1> admin@<worker>`
@@ -28,7 +45,7 @@ kubectl -n argocd patch secret argocd-secret -p \
   "{\"stringData\":{\"accounts.viewer.password\":\"$HASH\",\"accounts.viewer.passwordMtime\":\"$(date -u +%FT%TZ)\"}}"
 ```
 
-# Flow
+## Flow
 
 1. First need to Write the policy in `policies/` with a pass and a fail case in `tests/kyverno/`.
 2. It can be tested offline using `python3 tests/render.py && kyverno test tests/kyverno`
