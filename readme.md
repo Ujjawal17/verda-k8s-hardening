@@ -1,4 +1,4 @@
-# directory structure
+# Directory structure
 
 infra/        Terraform for provisoning 3 nodes on verda
 bootstrap/    bootstrap script to configure RKE2, Cilium, Argo CD once
@@ -27,3 +27,12 @@ HASH=$(kubectl -n argocd exec deploy/argocd-server -- argocd account bcrypt --pa
 kubectl -n argocd patch secret argocd-secret -p \
   "{\"stringData\":{\"accounts.viewer.password\":\"$HASH\",\"accounts.viewer.passwordMtime\":\"$(date -u +%FT%TZ)\"}}"
 ```
+
+# Flow
+
+1. First need to Write the policy in `policies/` with a pass and a fail case in `tests/kyverno/`.
+2. It can be tested offline using `python3 tests/render.py && kyverno test tests/kyverno`
+3. Then create a PR which will trigger CI (`.github/workflows/ci.yaml`) checking policy tests, kubeconform, tenant image CVE gate. Also, the branch protection on `main` requires signed commits. The CI checks can be added as required status checks.
+4. Once Merged, argo will syncs the `policies` app. New or risky rules start with `validationActions: [Audit]`, are reviewed
+   in PolicyReports (`kubectl get policyreports -A`), then switched to `[Deny]` in a second PR.
+5. to prove live on the cluster, `scripts/demo.sh` can be used which will run the test and add it to the demo log.
