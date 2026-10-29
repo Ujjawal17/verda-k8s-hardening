@@ -1,4 +1,5 @@
 #directory structure
+
 infra/        Terraform for provisoning 3 nodes on verda
 bootstrap/    bootstrap script to configure RKE2, Cilium, Argo CD once
 argocd/       It has AppProjects with one application per component
@@ -10,6 +11,7 @@ tests/        offline tests used in ci workflow: chart rendering py script and k
 scripts/      seal-secrets.sh to create secret offline, and demo.sh for creating demo log md file
 
 #How to run it:
+
 `terraform -chdir=infra output node_ips`
 for control plane: `ssh admin@<cp-1>` and workers: `ssh -J admin@<cp-1> admin@<worker>`
 `ssh -N -L 6443:127.0.0.1:6443 admin@<cp-1>` then `export KUBECONFIG=$PWD/kubeconfig`
