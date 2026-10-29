@@ -18,7 +18,7 @@ spec:
         validationFailureAction: Enforce
         failurePolicy: Fail
         vpolExclude:
-          excludeNamespaces:     # components that need host access by design (see docs/threat-model.md)
+          excludeNamespaces:     # components that need host access by design
             - kube-system
             - kyverno
             - falco

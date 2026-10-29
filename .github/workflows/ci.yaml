@@ -61,7 +61,7 @@ jobs:
           tar -xzf trivy.tgz trivy && sudo install -m 755 trivy /usr/local/bin/
       - name: fail on fixable CRITICAL CVEs in tenant images
         # Fixable only: an unfixable CVE cannot be resolved by a bump; it goes through
-        # docs/cve-triage.md (reachability, exposure, compensating controls) instead.
+        # manual triage (reachability, exposure, compensating controls) instead.
         run: |
           set -euo pipefail
           grep -rhoE 'image: *"?[^" ]+' apps/ | sed -E 's/image: *"?//' | sort -u | while read -r img; do
