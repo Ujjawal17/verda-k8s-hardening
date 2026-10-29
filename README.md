@@ -73,3 +73,5 @@ kubectl -n argocd patch secret argocd-secret -p \
 4. Once Merged, argo will syncs the `policies` app. New or risky rules start with `validationActions: [Audit]`, are reviewed
    in PolicyReports (`kubectl get policyreports -A`), then switched to `[Deny]` in a second PR.
 5. to prove live on the cluster, `scripts/demo.sh` can be used which will run the test and add it to the demo log.
+
+Links to the docs: [Summary](docs/summary.pdf) · [Threat model](docs/threat-model.pdf) · [Bonus write-ups: scale, attack scenarios, CVE triage](docs/bonus-writeups.pdf) · [Demo log](docs/demo-log.md)
